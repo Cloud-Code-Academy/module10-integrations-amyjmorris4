@@ -16,13 +16,35 @@
  * 
  * Optional Challenge: Use a trigger handler class to implement the trigger logic.
  */
-trigger ContactTrigger on Contact(before insert) {
-	// When a contact is inserted
-	// if DummyJSON_Id__c is null, generate a random number between 0 and 100 and set this as the contact's DummyJSON_Id__c value
+trigger ContactTrigger on Contact(before insert, before update) {
+	//List of Contacts to process for API callouts
+	List<Contact> contactsForGetCallout = new List<Contact>();
+	List<Contact> contactsForPostCallout = new List<Contact>();
 
-	//When a contact is inserted
-	// if DummyJSON_Id__c is less than or equal to 100, call the getDummyJSONUserFromId API
+	//Loop through all inserted/updated contacts
+	for (contact con : Trigger.new) {
+		//Check if the Contact is being inserted and DummyJSON_Id__c is null
+		if (Trigger.isInsert) {
+			if (con.DummyJSON_Id__c == null) {
+				//Generate a random number between 0 and 100
+				con.DummyJSON_Id__c = String.valueOf(Math.floor(Math.random() * 101));
+			}
+			//If DummyJSON_Id__c is less than or equal to 100, prepare for a Get callout
+			if (Trigger.isInsert && Integer.valueOf(con.DummyJSON_Id__c) <= 100) {
+				contactsForGetCallout.add(con);
+			}
+			//If the contact is updated and DummyJSON_Id__c is greater than 100, prepare for a POST callout
+			if (Trigger.isUpdate && Integer.valueOf(con.DummyJSON_Id__c) > 100) {
+				contactsForPostCallout.add(con);
+			}
 
-	//When a contact is updated
-	// if DummyJSON_Id__c is greater than 100, call the postCreateDummyJSONUser API
+		}
+		//Make the GET callout via a Queueable class if needed
+		if (!contactsForGetCalout.isEmpty()){
+			System.enqueueJob(new ContactCalloutQueueable('GET', contactsForGetCallout));
+		}
+		//Make the POST callout via a Queueable class if needed
+		if (!contactsForPostCallout.isEmpty()){
+			System.enqueueJob(new ContactCalloutQueueable('POST', contactsForPostCallout));
+		}
 }
