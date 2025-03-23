@@ -35,18 +35,36 @@ public with sharing class DummyJSONCallout {
      */
 
 	public static void getDummyJSONUserFromId(String dummyUserId) {
+		try{
 		// Create HTTP request to send.
+		HttpRequest req = new HttpRequest();
 
 		// Set the endpoint URL. Use direct URL or for best practices use Named Credential.
+		req.setEndpoint('callout:DummyJsonUser/' + dummyUserId);
 
 		// Set the HTTP method to GET.
+		req.setMethod('GET');
 
 		// Send the HTTP request and get the response.
+		Http http = new Http();
+		HTTPResponse res = http.send(req);
 
 		// If the HTTP response code is successful, parse the JSON response and update the contact.
-		Contact cont = null;
-		upsert cont DummyJSON_Id__c; //insert/update from the JSON response using the external id (dummyUserId)
+		if (res.getStatusCode() == 200) {
+			// Deserialize the JSON response and update Salesforce Contact
+			String jsonResponse = res.getBody();
+			Contact cont = createContactFromJson(jsonResponse);
+			cont.DummyJSON_Id__c = dummyUserId;
+			upsert cont DummyJSON_Id__c; //insert/update from the JSON response using the external id (dummyUserId)
+			System.debug('cont: ' + cont);
+		} else {
+			//Handle the case where the response is not successful.
+			System.debug('Failed to fetch User. Status Code: ' + res.getStatusCode() + ' ' + res.getStatus());
+		}
+	} catch (Exception e){
+			System.debug('Callout error: ' + e.getMessage());
 	}
+}
 
 	/* 
 	 * Question 2
@@ -66,16 +84,32 @@ public with sharing class DummyJSONCallout {
 	@TestVisible // Allows test class to see this method. Since it is private, it would not be visible otherwise.
 	private static Contact createContactFromJson(String jsonResponse) {
 		// Deserialize the JSON string into map of primitive data types.
+		Map<String, Object> userData = (Map<String, Object>) JSON.deserializeUntyped(jsonResponse);
 
 		// Create a new contact from the JSON response.
+		Contact cont = new Contact();
 
 		// Set the contact fields from the JSON response.
+		cont.Email = (String) userData.get('email');
+		cont.Phone = (String) userData.get('phone');
+
+		String birthdateString = (String) userData.get ('birthDate');
+		if (birthdateString != null) {
+		cont.Birthdate = Date.valueOf (birthdateString);
+		}
 
 		// Deserialize the address from the JSON response.
+		Map<String, Object> address = (Map<String, Object>) userData.get('address');
+		if (address != null) {
+			cont.MailingStreet = (String) address.get('address');
+			cont.MailingCity = (String) address.get('city');
+			cont.MailingState = (String) address.get('state');
+			cont.MailingCountry = (String) address.get('country');
+			cont.MailingPostalCode = (String) address.get('postalCode');
+		}
 
-		// Set the address fields on the contact.
 
-		return null;
+		return cont;
 	}
 
 	/* 
@@ -92,19 +126,56 @@ public with sharing class DummyJSONCallout {
      * @param contactId The Salesforce Contact ID used to generate the JSON payload for the external system.
      */
 	
-	public static void postCreateDummyJSONUser(String contactId) {
-		// Create HTTP request to send.
-
-		// Set the endpoint URL. Use direct URL or for best practices use Named Credential.
-
-		// Set the HTTP method to POST.
-
-		// Set the body using generateDummyJsonUserPayload method.
-
-		// Send the HTTP request and get the response.
-
-		// If the HTTP response code is successful, update the contact.
+	 public static void postCreateDummyJSONUser(String contactId) {
+		try {
+			// Query the Contact record
+			Contact contact = [SELECT Id, FirstName, LastName, Email, Phone FROM Contact WHERE Id = :contactId LIMIT 1];
+	
+			if (contact != null) {
+				// Prepare the JSON payload
+				String jsonPayload = generateDummyJsonUserPayload(contact);
+	
+				// Create HTTP request to send.
+				HttpRequest req = new HttpRequest();
+				req.setEndpoint('callout:DummyJsonUser/add'); // Set the endpoint URL
+				req.setMethod('POST'); // Set the HTTP method to POST.
+				req.setHeader('Content-Type', 'application/json');
+				req.setBody(jsonPayload);
+	
+				// Send the HTTP request and get the response.
+				Http http = new Http();
+				HTTPResponse res = http.send(req);
+	
+				// If the HTTP response code is successful, update the contact.
+				if (res.getStatusCode() >= 200 && res.getStatusCode() < 300) {
+					// Update the contact's 'DummyJSON_Last_Updated__c' field in Salesforce to the current time.
+					contact.DummyJSON_Last_Updated__c = Datetime.now();
+					update contact;
+				} else {
+					// Handle error response from the external system
+					System.debug('Error response from DummyJSON API: ' + res.getStatusCode() + ' - ' + res.getBody());
+				}
+			} else {
+				System.debug('No Contact found with ID: ' + contactId);
+			}
+		} catch (Exception e) {
+			// Handle any unexpected errors
+			System.debug('Error in postCreateDummyJSONUser: ' + e.getMessage());
+		}
 	}
+
+// Helper method to generate JSON payload for the external system
+public static String generateDummyJsonUserPayload(Contact contact) {
+	Map<String, Object> payload = new Map<String, Object>();
+	payload.put('id', contact.Id);
+	payload.put('firstName', contact.FirstName);
+	payload.put('lastName', contact.LastName);
+	payload.put('email', contact.Email);
+	payload.put('phone', contact.Phone);
+
+	return JSON.serialize(payload);  // Convert map to JSON string
+}
+
 
 	/*
 	 * Question 4
@@ -122,15 +193,28 @@ public with sharing class DummyJSONCallout {
      * @return String The JSON string payload that represents the Contact's details.
      */
 	@TestVisible // Allows test class to see this method. Since it is private, it would not be visible otherwise.
-	private static String generateDummyJsonUserPayload(String contactId) {
-		// Query the contact to get the field values to generate the JSON payload.
+private static String generateDummyJsonUserPayload(String contactId) {
+    try {
+        // Query the contact to get the field values to generate the JSON payload.
+        Contact contact = [SELECT Id, FirstName, LastName, Email, Phone FROM Contact WHERE Id = :contactId];
 
-		// Create a map of the field values.
+        // Create a map of the field values.
+        Map<String, Object> contactPayload = new Map<String, Object>();
+        // Make sure to check that required contacts fields have a value. Default the value to unknown if it does not exist.
+        contactPayload.put('salesforceId', contact.Id);
+        contactPayload.put('firstName', String.isNotBlank(contact.FirstName) ? contact.FirstName : 'Unknown');
+        contactPayload.put('lastName', String.isNotBlank(contact.LastName) ? contact.LastName : 'Unknown');
+        contactPayload.put('email', String.isNotBlank(contact.Email) ? contact.Email : 'Unknown');
+        contactPayload.put('phone', String.isNotBlank(contact.Phone) ? contact.Phone : 'Unknown');
 
-		// Serialize the map into a JSON string.
-		// Make sure to check that required contacts fields have a value. Default the value to unknown if it does not exists.
-		// Integration data can change over time. It is a best practice to add safeguards/validation to ensure the integration does not break.
+        // Serialize the map into a JSON string.
+        String jsonPayload = JSON.serialize(contactPayload);
 
-		return null;
-	}
+        return jsonPayload;
+
+    } catch (Exception e) {
+        System.debug('Error generating JSON payload: ' + e.getMessage());
+        return null;
+    }
+}
 }
