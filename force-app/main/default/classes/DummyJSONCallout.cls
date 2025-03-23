@@ -56,6 +56,7 @@ public with sharing class DummyJSONCallout {
 			Contact cont = createContactFromJson(jsonResponse);
 			cont.DummyJSON_Id__c = dummyUserId;
 			upsert cont DummyJSON_Id__c; //insert/update from the JSON response using the external id (dummyUserId)
+			System.debug('cont: ' + cont);
 		} else {
 			//Handle the case where the response is not successful.
 			System.debug('Failed to fetch User. Status Code: ' + res.getStatusCode() + ' ' + res.getStatus());

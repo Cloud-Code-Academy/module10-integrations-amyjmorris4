@@ -153,6 +153,7 @@ public with sharing class DummyJSONCalloutTest {
 			FROM Contact
 			WHERE Id IN :contacts AND DummyJSON_Id__c != null
 		];
+		System.debug('contacts: ' + contacts);
 		Assert.isTrue(!contacts.isEmpty(), 'No contacts were created');
 
 		for (Contact cont : contacts) {

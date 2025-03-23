@@ -40,11 +40,12 @@ trigger ContactTrigger on Contact(before insert, before update) {
 
 		}
 		//Make the GET callout via a Queueable class if needed
-		if (!contactsForGetCalout.isEmpty()){
+		if (!contactsForGetCallout.isEmpty()){
 			System.enqueueJob(new ContactCalloutQueueable('GET', contactsForGetCallout));
 		}
 		//Make the POST callout via a Queueable class if needed
 		if (!contactsForPostCallout.isEmpty()){
 			System.enqueueJob(new ContactCalloutQueueable('POST', contactsForPostCallout));
 		}
+}
 }
